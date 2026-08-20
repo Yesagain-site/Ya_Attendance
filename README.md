@@ -1,4 +1,4 @@
-# ZKT Attendance — standalone attendance & device-management system
+# YA-Attendance — standalone attendance & device-management system
 
 A self-hosted, BioTime-class attendance app for **ZKTeco Horus TL2** face
 terminals. Our app **is the device server** (speaks the ADMS/iclock push
