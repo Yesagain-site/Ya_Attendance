@@ -6,15 +6,15 @@ settings — everything lives in the app's Postgres, so one dump captures it all
 
 ## A. On the CURRENT PC — back up the live database
 
-Windows **PowerShell** (note the `cmd /c` wrapper — PowerShell's `>` can write
-UTF-16, which psql won't read):
+Do the redirection **inside the container** and copy the file out — this keeps
+the dump as clean UTF-8 in any shell. (PowerShell's `>` writes UTF-16, which
+psql later rejects with `invalid byte sequence for encoding "UTF8": 0xff` — avoid it.)
 
 ```powershell
 cd D:\web\zkt-attendance
-cmd /c "docker compose exec -T db pg_dump -U zkt --clean --if-exists zkt_attendance > ya_attendance_backup.sql"
+docker compose exec -T db sh -c "pg_dump -U zkt --clean --if-exists zkt_attendance > /tmp/backup.sql"
+docker compose cp db:/tmp/backup.sql ya_attendance_backup.sql
 ```
-
-(bash/Linux: `docker compose exec -T db pg_dump -U zkt --clean --if-exists zkt_attendance > ya_attendance_backup.sql`)
 
 Copy two things to the production PC:
 - `ya_attendance_backup.sql`  (the data — keep it private; it contains PII + biometric templates)
