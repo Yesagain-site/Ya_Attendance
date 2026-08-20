@@ -6,10 +6,15 @@ settings — everything lives in the app's Postgres, so one dump captures it all
 
 ## A. On the CURRENT PC — back up the live database
 
-```bash
+Windows **PowerShell** (note the `cmd /c` wrapper — PowerShell's `>` can write
+UTF-16, which psql won't read):
+
+```powershell
 cd D:\web\zkt-attendance
-docker compose exec -T db pg_dump -U zkt --clean --if-exists zkt_attendance > ya_attendance_backup.sql
+cmd /c "docker compose exec -T db pg_dump -U zkt --clean --if-exists zkt_attendance > ya_attendance_backup.sql"
 ```
+
+(bash/Linux: `docker compose exec -T db pg_dump -U zkt --clean --if-exists zkt_attendance > ya_attendance_backup.sql`)
 
 Copy two things to the production PC:
 - `ya_attendance_backup.sql`  (the data — keep it private; it contains PII + biometric templates)
@@ -37,16 +42,21 @@ Copy two things to the production PC:
 
 ## C. Restore the data, then start everything
 
-```bash
+```powershell
 # 1) start ONLY the database first
 docker compose up -d db
 
-# 2) wait ~10s until it's healthy, then restore the snapshot
-docker compose exec -T db psql -U zkt -d zkt_attendance < ya_attendance_backup.sql
+# 2) wait ~10s until healthy, then restore the snapshot.
+#    Copy the file into the container and let psql read it (works in any shell,
+#    no '<' redirection, no encoding surprises):
+docker compose cp ya_attendance_backup.sql db:/tmp/restore.sql
+docker compose exec -T db psql -U zkt -d zkt_attendance -f /tmp/restore.sql
 
 # 3) start the rest
 docker compose up -d --build
 ```
+
+(bash alternative for step 2: `docker compose exec -T db psql -U zkt -d zkt_attendance < ya_attendance_backup.sql`)
 
 - The restore's `--clean` drops the fresh seed and replaces it with the **exact
   current state**, so the prod DB is identical (same admin password, employees,
