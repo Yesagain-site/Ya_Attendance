@@ -1,0 +1,59 @@
+services:
+  db:
+    build: ./db
+    image: zkt-attendance-db
+    container_name: zkt_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zkt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zkt_local_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-zkt_attendance}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - zkt_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zkt} -d ${POSTGRES_DB:-zkt_attendance}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: zkt_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zkt}:${POSTGRES_PASSWORD:-zkt_local_pw}@db:5432/${POSTGRES_DB:-zkt_attendance}
+      ZK_DEVICE_IP: ${ZK_DEVICE_IP}
+      ZK_DEVICE_PORT: ${ZK_DEVICE_PORT:-4370}
+      ZK_COMM_PASSWORD: ${ZK_COMM_PASSWORD:-0}
+      ZK_DEVICE_SN: ${ZK_DEVICE_SN}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-300}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+      # Devices push ADMS to <server>:85 — expose the backend there too so the
+      # terminals reach /iclock/* during the .170 impersonation test.
+      - "85:8000"
+    # Lets the container reach the terminal on the office LAN (Docker Desktop).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Browser calls the backend through the frontend's nginx proxy (/api),
+        # so this stays same-origin. Kept as a build arg for flexibility.
+        VITE_API_BASE: /api
+    container_name: zkt_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8090}:80"
+
+volumes:
+  zkt_pgdata:

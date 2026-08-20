@@ -1,0 +1,8 @@
+html, body, #root { margin: 0; height: 100%; }
+body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; }
+.ant-layout-header .ant-menu-horizontal { border-bottom: none; }
+
+@keyframes zkt-up   { 0%,100% { transform: translateY(3px); opacity:.5 } 50% { transform: translateY(-3px); opacity:1 } }
+@keyframes zkt-down { 0%,100% { transform: translateY(-3px); opacity:.5 } 50% { transform: translateY(3px); opacity:1 } }
+.zkt-arrow-up   { display:inline-block; animation: zkt-up   .8s ease-in-out infinite; }
+.zkt-arrow-down { display:inline-block; animation: zkt-down .8s ease-in-out infinite; }

@@ -1,0 +1,23 @@
+# --- secrets ---
+.env
+
+# --- python ---
+__pycache__/
+*.pyc
+.venv/
+
+# --- node ---
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
+# --- local runtime data ---
+data/
+
+# --- PRODUCTION DATA: employee PII + biometric face templates — NEVER COMMIT ---
+import/
+dumped db from easyTP/
+*.dump
+*.bak
+biotime_*.sql
+*_dump.sql
