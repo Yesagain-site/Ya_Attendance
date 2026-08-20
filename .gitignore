@@ -21,3 +21,5 @@ dumped db from easyTP/
 *.bak
 biotime_*.sql
 *_dump.sql
+*_backup.sql
+ya_attendance_*.sql
