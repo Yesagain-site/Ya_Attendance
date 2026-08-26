@@ -148,3 +148,127 @@ def monthly_xlsx(user: dict = Depends(auth.get_current_user), month: str | None 
                      "Late days", "Early days", "Total Worked (h:m)", "Total OT (h:m)"], data)
     return Response(content, media_type=XLSX_MT, headers={
         "Content-Disposition": f'attachment; filename="report_{label}.xlsx"'})
+
+
+# ---------------- Detailed per-employee daily report ---------------- #
+def _detail_employees(user, month, date_from, date_to, search, include_absent):
+    first, last = _resolve_range(month, date_from, date_to)
+    end = min(last, dubai_today())
+    d = first
+    while d <= end:
+        if db.query("SELECT count(*) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"] == 0:
+            eng.compute_day(d)
+        d += timedelta(days=1)
+
+    scope_frag, sparams = _scope(user)
+    where = f"1=1 {scope_frag}"
+    params = [first, last] + list(sparams)
+    if search:
+        where += (" AND (e.pin ILIKE %s OR e.name ILIKE %s OR "
+                  "TRIM(COALESCE(e.first_name,'')||' '||COALESCE(e.last_name,'')) ILIKE %s)")
+        s = f"%{search}%"
+        params += [s, s, s]
+    if not include_absent:
+        where += (" AND EXISTS (SELECT 1 FROM attendance_day a2 WHERE a2.emp_code=e.pin "
+                  "AND a2.work_date BETWEEN %s AND %s "
+                  "AND a2.status IN ('present','halfday','incomplete'))")
+        params += [first, last]
+
+    rows = db.query(
+        f"""SELECT e.pin, {db.FULLNAME} AS name, dep.name AS department,
+                   ad.work_date, ad.first_in, ad.last_out, ad.worked_min,
+                   ad.late_min, ad.early_min, ad.ot_in, ad.ot_out, ad.ot_min, ad.status
+            FROM employees e
+            LEFT JOIN department dep ON dep.id = e.department_id
+            JOIN attendance_day ad ON ad.emp_code = e.pin
+                 AND ad.work_date BETWEEN %s AND %s
+            WHERE {where}
+            ORDER BY e.pin, ad.work_date""",
+        tuple(params))
+
+    # group by employee
+    emps = {}
+    for r in rows:
+        e = emps.get(r["pin"])
+        if not e:
+            e = emps[r["pin"]] = {
+                "pin": r["pin"], "name": r["name"], "department": r["department"],
+                "days": [],
+                "summary": {"present": 0, "absent": 0, "halfday": 0, "late": 0,
+                            "early": 0, "worked_min": 0, "ot_min": 0},
+            }
+        e["days"].append({
+            "date": str(r["work_date"]),
+            "weekday": r["work_date"].strftime("%a"),
+            "first_in": r["first_in"], "last_out": r["last_out"],
+            "worked_min": r["worked_min"], "late_min": r["late_min"],
+            "early_min": r["early_min"], "ot_in": r["ot_in"], "ot_out": r["ot_out"],
+            "ot_min": r["ot_min"], "status": r["status"],
+        })
+        s = e["summary"]
+        if r["status"] in ("present", "halfday", "incomplete"): s["present"] += 1
+        if r["status"] == "absent": s["absent"] += 1
+        if r["status"] == "halfday": s["halfday"] += 1
+        if r["late_min"]: s["late"] += 1
+        if r["early_min"]: s["early"] += 1
+        s["worked_min"] += r["worked_min"] or 0
+        s["ot_min"] += r["ot_min"] or 0
+    return list(emps.values()), first, last
+
+
+@router.get("/detail")
+def detail(user: dict = Depends(auth.get_current_user), month: str | None = None,
+           date_from: str | None = Query(None, alias="from"),
+           date_to: str | None = Query(None, alias="to"),
+           search: str | None = None, include_absent: bool = False):
+    emps, first, last = _detail_employees(user, month, date_from, date_to, search, include_absent)
+    return {"from": str(first), "to": str(last), "employees": emps}
+
+
+@router.get("/detail.xlsx")
+def detail_xlsx(user: dict = Depends(auth.get_current_user), month: str | None = None,
+                date_from: str | None = Query(None, alias="from"),
+                date_to: str | None = Query(None, alias="to"),
+                search: str | None = None, include_absent: bool = False):
+    emps, first, last = _detail_employees(user, month, date_from, date_to, search, include_absent)
+    label = f"{first}_to_{last}"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Attendance"[:31]
+    hdr = ["Date", "Day", "Check-In", "Check-Out", "Worked", "Late (m)",
+           "OT-In", "OT-Out", "OT", "Status"]
+    row = 1
+    for e in emps:
+        # employee title
+        c = ws.cell(row=row, column=1,
+                    value=f"{e['pin']}  {e['name'] or ''}  —  {e['department'] or ''}")
+        c.font = Font(bold=True, size=12)
+        row += 1
+        # column header
+        for i, h in enumerate(hdr, 1):
+            hc = ws.cell(row=row, column=i, value=h)
+            hc.fill = HDR_FILL; hc.font = HDR_FONT
+        row += 1
+        for drow in e["days"]:
+            vals = [drow["date"], drow["weekday"],
+                    str(drow["first_in"] or "")[11:19], str(drow["last_out"] or "")[11:19],
+                    _hm(drow["worked_min"]), drow["late_min"] or "",
+                    str(drow["ot_in"] or "")[11:19], str(drow["ot_out"] or "")[11:19],
+                    _hm(drow["ot_min"]) if drow["ot_min"] else "", drow["status"]]
+            for i, v in enumerate(vals, 1):
+                ws.cell(row=row, column=i, value=v)
+            row += 1
+        sm = e["summary"]
+        tc = ws.cell(row=row, column=1, value="TOTAL")
+        tc.font = Font(bold=True)
+        ws.cell(row=row, column=3, value=f"Present {sm['present']}  Absent {sm['absent']}")
+        ws.cell(row=row, column=5, value=_hm(sm["worked_min"]))
+        ws.cell(row=row, column=9, value=_hm(sm["ot_min"]))
+        for cc in ws[row]:
+            cc.font = Font(bold=True)
+        row += 2  # blank spacer between employees
+    for col, w in zip("ABCDEFGHIJ", (12, 6, 10, 10, 9, 8, 10, 10, 8, 12)):
+        ws.column_dimensions[col].width = w
+    buf = BytesIO(); wb.save(buf)
+    return Response(buf.getvalue(), media_type=XLSX_MT, headers={
+        "Content-Disposition": f'attachment; filename="attendance_{label}.xlsx"'})

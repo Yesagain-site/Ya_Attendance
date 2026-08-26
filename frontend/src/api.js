@@ -129,6 +129,8 @@ export const api = {
   dashboardExceptions: (days = 14) => req("/dashboard/exceptions", { params: { days } }),
   dashboardHourly: () => req("/dashboard/hourly"),
   monthly: (params) => req("/reports/monthly", { params }),
+  reportDetail: (params) => req("/reports/detail", { params }),
+  downloadDetail: (params, fname) => download("/reports/detail.xlsx", params, fname || "attendance.xlsx"),
   downloadDaily: (date) => download("/reports/daily.xlsx", { date }, `daily_${date}.xlsx`),
   downloadMonthly: (params, fname) => download("/reports/monthly.xlsx", params, fname || "report.xlsx"),
 };
