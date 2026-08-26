@@ -53,6 +53,8 @@ export default function DailyReport() {
   };
 
   const counts = rows.reduce((a, r) => { a[r.status] = (a[r.status] || 0) + 1; return a; }, {});
+  const lateN = rows.filter((r) => r.late_min > 0).length;
+  const earlyN = rows.filter((r) => r.early_min > 0).length;
   const q = search.trim().toLowerCase();
   const shown = rows
     .filter((r) => matchFilter(r, filter))
@@ -85,6 +87,8 @@ export default function DailyReport() {
         <Col><Statistic title="Present" value={counts.present || 0} valueStyle={{ color: "#22c55e" }} /></Col>
         <Col><Statistic title="Absent" value={counts.absent || 0} valueStyle={{ color: "#ef4444" }} /></Col>
         <Col><Statistic title="Half day" value={counts.halfday || 0} valueStyle={{ color: "#f59e0b" }} /></Col>
+        <Col><Statistic title="Late" value={lateN} valueStyle={{ color: "#ef4444" }} /></Col>
+        <Col><Statistic title="Early" value={earlyN} valueStyle={{ color: "#a855f7" }} /></Col>
         <Col><Statistic title="Day off" value={counts.dayoff || 0} /></Col>
       </Row>
       <Space style={{ marginBottom: 12 }} wrap>

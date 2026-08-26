@@ -17,7 +17,8 @@ from . import db
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "dev-insecure-change-me")
 ALGORITHM = "HS256"
-TOKEN_HOURS = int(os.environ.get("JWT_HOURS", "12"))
+# 0 = tokens never expire (per requirement). Set JWT_HOURS>0 to re-enable expiry.
+TOKEN_HOURS = int(os.environ.get("JWT_HOURS", "0"))
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
@@ -35,9 +36,10 @@ def verify_password(p: str, h: str) -> bool:
 
 
 def make_token(user: dict) -> str:
-    exp = datetime.now(timezone.utc) + timedelta(hours=TOKEN_HOURS)
     payload = {"sub": str(user["id"]), "username": user["username"],
-               "role": user["role"], "exp": exp}
+               "role": user["role"]}
+    if TOKEN_HOURS > 0:  # otherwise no `exp` claim → token never expires
+        payload["exp"] = datetime.now(timezone.utc) + timedelta(hours=TOKEN_HOURS)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 

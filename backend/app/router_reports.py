@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -84,8 +84,18 @@ def _month_bounds(month: str):
     return first, last
 
 
-def _monthly_rows(month: str, user: dict):
-    first, last = _month_bounds(month)
+def _resolve_range(month, date_from, date_to):
+    """Full month (YYYY-MM) OR an explicit date range (from/to). Range wins."""
+    if date_from and date_to:
+        first = datetime.strptime(date_from, "%Y-%m-%d").date()
+        last = datetime.strptime(date_to, "%Y-%m-%d").date()
+    else:
+        first, last = _month_bounds(month)
+    return first, last
+
+
+def _monthly_rows(user: dict, month=None, date_from=None, date_to=None, include_absent=False):
+    first, last = _resolve_range(month, date_from, date_to)
     end = min(last, dubai_today())
     d = first
     while d <= end:
@@ -93,36 +103,48 @@ def _monthly_rows(month: str, user: dict):
             eng.compute_day(d)
         d += timedelta(days=1)
     scope, p = _scope(user)
+    # Skip employees with no attendance in the range (long-time absent) unless asked.
+    having = "" if include_absent else \
+        "HAVING count(*) FILTER (WHERE ad.status IN ('present','halfday','incomplete')) > 0"
     return db.query(
         f"""SELECT ad.emp_code, {db.FULLNAME} AS name, dep.name AS department,
                count(*) FILTER (WHERE ad.status IN ('present','halfday','incomplete')) AS present_days,
                count(*) FILTER (WHERE ad.status='absent')  AS absent_days,
                count(*) FILTER (WHERE ad.status='halfday') AS halfday_days,
                count(*) FILTER (WHERE ad.late_min > 0)     AS late_days,
+               count(*) FILTER (WHERE ad.early_min > 0)    AS early_days,
                COALESCE(sum(ad.worked_min),0) AS worked_min,
                COALESCE(sum(ad.ot_min),0)     AS ot_min
             FROM attendance_day ad
             LEFT JOIN employees e ON e.pin = ad.emp_code
             LEFT JOIN department dep ON dep.id = e.department_id
             WHERE ad.work_date BETWEEN %s AND %s {scope}
-            GROUP BY ad.emp_code, e.first_name, e.last_name, e.name, dep.name
+            GROUP BY ad.emp_code, e.pin, e.first_name, e.last_name, e.name, dep.name
+            {having}
             ORDER BY ad.emp_code""",
         tuple([first, last] + p))
 
 
 @router.get("/monthly")
-def monthly(month: str, user: dict = Depends(auth.get_current_user)):
-    return _monthly_rows(month, user)
+def monthly(user: dict = Depends(auth.get_current_user), month: str | None = None,
+            date_from: str | None = Query(None, alias="from"),
+            date_to: str | None = Query(None, alias="to"),
+            include_absent: bool = False):
+    return _monthly_rows(user, month, date_from, date_to, include_absent)
 
 
 @router.get("/monthly.xlsx")
-def monthly_xlsx(month: str, user: dict = Depends(auth.get_current_user)):
-    rows = _monthly_rows(month, user)
+def monthly_xlsx(user: dict = Depends(auth.get_current_user), month: str | None = None,
+                 date_from: str | None = Query(None, alias="from"),
+                 date_to: str | None = Query(None, alias="to"),
+                 include_absent: bool = False):
+    rows = _monthly_rows(user, month, date_from, date_to, include_absent)
+    label = f"{date_from}_to_{date_to}" if (date_from and date_to) else month
     data = [[r["emp_code"], r["name"], r["department"] or "", r["present_days"],
-             r["absent_days"], r["halfday_days"], r["late_days"],
+             r["absent_days"], r["halfday_days"], r["late_days"], r["early_days"],
              _hm(r["worked_min"]), _hm(r["ot_min"])] for r in rows]
-    content = _xlsx(f"Monthly {month}",
+    content = _xlsx(f"Report {label}",
                     ["PIN", "Name", "Department", "Present", "Absent", "Half-day",
-                     "Late days", "Total Worked (h:m)", "Total OT (h:m)"], data)
+                     "Late days", "Early days", "Total Worked (h:m)", "Total OT (h:m)"], data)
     return Response(content, media_type=XLSX_MT, headers={
-        "Content-Disposition": f'attachment; filename="monthly_{month}.xlsx"'})
+        "Content-Disposition": f'attachment; filename="report_{label}.xlsx"'})

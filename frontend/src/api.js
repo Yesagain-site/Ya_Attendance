@@ -128,9 +128,9 @@ export const api = {
   dashboardStats: () => req("/dashboard/stats"),
   dashboardExceptions: (days = 14) => req("/dashboard/exceptions", { params: { days } }),
   dashboardHourly: () => req("/dashboard/hourly"),
-  monthly: (month) => req("/reports/monthly", { params: { month } }),
+  monthly: (params) => req("/reports/monthly", { params }),
   downloadDaily: (date) => download("/reports/daily.xlsx", { date }, `daily_${date}.xlsx`),
-  downloadMonthly: (month) => download("/reports/monthly.xlsx", { month }, `monthly_${month}.xlsx`),
+  downloadMonthly: (params, fname) => download("/reports/monthly.xlsx", params, fname || "report.xlsx"),
 };
 
 async function download(path, params, filename) {
