@@ -57,6 +57,7 @@ export const api = {
 
   employees: (params) => req("/employees", { params }),
   employee: (pin) => req("/employees/" + pin),
+  nextPin: () => req("/employees/next-pin"),
   createEmployee: (body) => req("/employees", { method: "POST", body }),
   updateEmployee: (pin, body) =>
     req("/employees/" + pin, { method: "PUT", body }),

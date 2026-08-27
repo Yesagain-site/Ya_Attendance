@@ -144,6 +144,33 @@ def purge(pin: str, user: dict = Depends(auth.require_admin)):
     return {"ok": True, "pin": pin, "devices_queued": len(devices)}
 
 
+PIN_START_DEFAULT = 10001
+
+
+def _pin_start() -> int:
+    rows = db.query("SELECT value FROM settings WHERE key='pin_start'")
+    if rows and str(rows[0]["value"]).isdigit():
+        return int(rows[0]["value"])
+    return PIN_START_DEFAULT
+
+
+@router.get("/next-pin")
+def next_pin(user: dict = Depends(auth.get_current_user)):
+    """Lowest free numeric ID >= the start (default 10001), filling deleted gaps."""
+    base = _pin_start()
+    used = db.query(
+        "SELECT pin::bigint AS n FROM employees "
+        "WHERE pin ~ '^[0-9]+$' AND pin::bigint >= %s ORDER BY n", (base,))
+    expected = base
+    for r in used:
+        n = r["n"]
+        if n == expected:
+            expected += 1
+        elif n > expected:
+            break            # gap found at `expected`
+    return {"next_pin": str(expected)}
+
+
 @router.get("/{pin}/photo")
 def employee_photo(pin: str, t: str = ""):
     """Serve an employee's photo. Auth via ?t=<token> so <img> tags can use it."""

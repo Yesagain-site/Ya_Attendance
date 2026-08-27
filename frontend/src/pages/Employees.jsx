@@ -48,7 +48,14 @@ export default function Employees() {
     } catch (e) { message.error(e.message); }
   };
 
-  const openAdd = () => { form.resetFields(); setModal({}); };
+  const openAdd = async () => {
+    form.resetFields();
+    setModal({});
+    try {
+      const r = await api.nextPin();       // auto-suggest next free ID (gap-fill)
+      form.setFieldsValue({ pin: r.next_pin });
+    } catch { /* leave blank; admin can type */ }
+  };
   const openEdit = (rec) => { form.setFieldsValue(rec); setModal(rec); };
   const save = async () => {
     const v = await form.validateFields();
@@ -129,7 +136,8 @@ export default function Employees() {
         open={!!modal} onOk={save} onCancel={() => setModal(null)} destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="pin" label="PIN" rules={[{ required: true }]}>
+          <Form.Item name="pin" label="PIN / ID" rules={[{ required: true }]}
+            tooltip="Auto-suggested (next free number, fills deleted gaps). You can change it.">
             <Input disabled={!!modal?.pin} />
           </Form.Item>
           <Form.Item name="name" label="Name"><Input /></Form.Item>
