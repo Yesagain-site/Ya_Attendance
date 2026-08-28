@@ -154,20 +154,22 @@ def purge(pin: str, user: dict = Depends(auth.require_admin)):
     return {"ok": True, "pin": pin, "devices_queued": len(devices)}
 
 
-PIN_START_DEFAULT = 10001
+PIN_START_DEFAULT = 1001
+PIN_MAX_DEFAULT = 1999     # device capacity: IDs 1001..1999
 
 
-def _pin_start() -> int:
-    rows = db.query("SELECT value FROM settings WHERE key='pin_start'")
+def _setting_int(key: str, default: int) -> int:
+    rows = db.query("SELECT value FROM settings WHERE key=%s", (key,))
     if rows and str(rows[0]["value"]).isdigit():
         return int(rows[0]["value"])
-    return PIN_START_DEFAULT
+    return default
 
 
 @router.get("/next-pin")
 def next_pin(user: dict = Depends(auth.get_current_user)):
-    """Lowest free numeric ID >= the start (default 10001), filling deleted gaps."""
-    base = _pin_start()
+    """Lowest free numeric ID in [start..max] (default 1001..1999), filling gaps."""
+    base = _setting_int("pin_start", PIN_START_DEFAULT)
+    pin_max = _setting_int("pin_max", PIN_MAX_DEFAULT)
     used = db.query(
         "SELECT pin::bigint AS n FROM employees "
         "WHERE pin ~ '^[0-9]+$' AND pin::bigint >= %s ORDER BY n", (base,))
@@ -178,7 +180,9 @@ def next_pin(user: dict = Depends(auth.get_current_user)):
             expected += 1
         elif n > expected:
             break            # gap found at `expected`
-    return {"next_pin": str(expected)}
+    full = expected > pin_max
+    return {"next_pin": None if full else str(expected),
+            "capacity_full": full, "pin_max": pin_max}
 
 
 @router.get("/{pin}/photo")

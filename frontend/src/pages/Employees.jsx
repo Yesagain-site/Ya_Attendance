@@ -53,7 +53,9 @@ export default function Employees() {
     setModal({});
     try {
       const r = await api.nextPin();       // auto-suggest next free ID (gap-fill)
-      form.setFieldsValue({ pin: r.next_pin });
+      if (r.capacity_full)
+        message.warning(`Device capacity reached — all IDs up to ${r.pin_max} are in use`);
+      else form.setFieldsValue({ pin: r.next_pin });
     } catch { /* leave blank; admin can type */ }
   };
   const openEdit = (rec) => { form.setFieldsValue(rec); setModal(rec); };
