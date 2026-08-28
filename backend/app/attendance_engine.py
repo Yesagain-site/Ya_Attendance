@@ -117,13 +117,19 @@ def compute_employee_day(emp_code: str, dept_id, d: date, rules: dict) -> dict:
     ot_in = ot_out = None
 
     # ---- split off an overtime session: a return-gap after the shift end ----
+    # Only a REAL return counts as OT: the person left after the shift ended and
+    # came back for a session of >= min_ot. A lone evening check-out (in the
+    # morning, out at 19:13) is the REGULAR check-out — not an OT return — so we
+    # must not move regular_out back to the morning punch (that made worked = 0).
+    min_ot = rules.get("min_ot_min", 30)
     if isinstance(tt, dict) and tt.get("ot_enabled"):
         sched_out = datetime.combine(d, tt["out_time"])
         gap = timedelta(minutes=rules.get("ot_return_gap_min", 10))
         for i in range(1, len(caps)):
             if caps[i] >= sched_out and (caps[i] - caps[i - 1]) >= gap:
-                regular_out = caps[i - 1]     # left for the day here
-                ot_in, ot_out = caps[i], caps[-1]  # returned for OT
+                if _minutes(caps[i], caps[-1]) >= min_ot:   # a genuine return session
+                    regular_out = caps[i - 1]
+                    ot_in, ot_out = caps[i], caps[-1]
                 break
 
     result["first_in"] = first_in
@@ -139,11 +145,9 @@ def compute_employee_day(emp_code: str, dept_id, d: date, rules: dict) -> dict:
     result["break_min"] = 0
 
     if ot_in is not None:
-        ot = _minutes(ot_in, ot_out)
-        if ot >= rules.get("min_ot_min", 30):
-            result["ot_in"] = ot_in
-            result["ot_out"] = ot_out
-            result["ot_min"] = ot
+        result["ot_in"] = ot_in
+        result["ot_out"] = ot_out
+        result["ot_min"] = _minutes(ot_in, ot_out)
 
     if isinstance(tt, dict):
         sched_in = datetime.combine(d, tt["in_time"])

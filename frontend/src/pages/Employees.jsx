@@ -62,15 +62,22 @@ export default function Employees() {
   const save = async () => {
     const v = await form.validateFields();
     try {
-      if (modal.pin) await api.updateEmployee(modal.pin, v);
-      else await api.createEmployee(v);
-      message.success("Saved");
+      if (modal.pin) {
+        const r = await api.updateEmployee(modal.pin, v);
+        message.success(r.devices_queued ? `Saved — synced to ${r.devices_queued} device(s)` : "Saved");
+      } else {
+        await api.createEmployee(v);
+        message.success("Employee added");
+      }
       setModal(null); load();
     } catch (e) { message.error(e.message); }
   };
   const del = async (pin) => {
-    try { await api.deleteEmployee(pin); message.success("Deactivated"); load(); }
-    catch (e) { message.error(e.message); }
+    try {
+      const r = await api.purgeEmployee(pin);   // remove from app DB + all devices
+      message.success(`Deleted ${pin} — removal queued on ${r.devices_queued} device(s)`);
+      load();
+    } catch (e) { message.error(e.message); }
   };
 
   const columns = [
@@ -87,7 +94,9 @@ export default function Employees() {
       <Space>
         <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
         {isAdmin && (
-          <Popconfirm title="Deactivate this employee?" onConfirm={() => del(r.pin)}>
+          <Popconfirm title="Delete this employee?"
+            description="Removes them from the app and all connected devices."
+            okText="Delete" okButtonProps={{ danger: true }} onConfirm={() => del(r.pin)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         )}

@@ -117,6 +117,20 @@ def inactive(months: int = 3, user: dict = Depends(auth.get_current_user)):
     return rows
 
 
+def _sync_user_to_devices(pin: str) -> int:
+    """Queue a DATA USER (create/update) on every device for this employee."""
+    emp = db.query("SELECT pin, name, privilege, card FROM employees WHERE pin=%s", (pin,))
+    if not emp:
+        return 0
+    devices = db.query("SELECT sn FROM device")
+    for d in devices:
+        db.execute(
+            "INSERT INTO device_command (sn, content, kind, status) "
+            "VALUES (%s,%s,'user','pending')",
+            (d["sn"], commands.user_body(emp[0])))
+    return len(devices)
+
+
 def _purge_one(pin: str, devices: list) -> bool:
     if not db.query("SELECT 1 FROM employees WHERE pin=%s", (pin,)):
         return False
@@ -319,11 +333,13 @@ def update_employee(pin: str, body: EmployeeIn,
         fields.append("hire_date=%s")
         params.append(body.hire_date or None)
     if not fields:
-        return {"ok": True}
+        return {"ok": True, "devices_queued": 0}
     params.append(pin)
     db.execute(f"UPDATE employees SET {', '.join(fields)}, updated_at=now() "
                f"WHERE pin=%s", tuple(params))
-    return {"ok": True}
+    n = _sync_user_to_devices(pin)   # push the change to every device
+    audit.log(user["id"], "update_employee", "employee", f"{pin} (synced to {n} devices)")
+    return {"ok": True, "devices_queued": n}
 
 
 @router.delete("/{pin}")
