@@ -24,18 +24,11 @@ def _scope(user):
 
 
 def _ensure_computed(d):
-    have = db.query("SELECT count(*) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"]
-    if have == 0:
-        eng.compute_day(d)
+    eng.recompute_if_stale(d)
 
 
 def _ensure_today_fresh(d):
-    """Recompute today only when new punches arrived since the last compute —
-    keeps late/early/status live without recomputing on every poll."""
-    last = db.query("SELECT max(computed_at) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"]
-    newest = db.query("SELECT max(created_at) AS c FROM attendance WHERE punch_time::date=%s", (d,))[0]["c"]
-    if last is None or (newest is not None and newest > last):
-        eng.compute_day(d)
+    eng.recompute_if_stale(d)
 
 
 @router.get("/stats")

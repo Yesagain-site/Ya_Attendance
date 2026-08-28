@@ -193,6 +193,30 @@ def persist(res: dict):
         res)
 
 
+def recompute_if_stale(d: date):
+    """Recompute a day's cache if it's missing, if employees were added since,
+    or if new punches arrived after the last compute (self-healing)."""
+    row = db.query("SELECT count(*) AS c, max(computed_at) AS last "
+                   "FROM attendance_day WHERE work_date=%s", (d,))[0]
+    if row["c"] == 0:
+        compute_day(d); return
+    active = db.query("SELECT count(*) AS c FROM employees WHERE active")[0]["c"]
+    newest = db.query("SELECT max(created_at) AS c FROM attendance "
+                      "WHERE punch_time::date=%s", (d,))[0]["c"]
+    if active > row["c"] or (newest and row["last"] and newest > row["last"]):
+        compute_day(d)
+
+
+def compute_range(a: date, b: date) -> int:
+    """Force-recompute every day in [a, b] (use after a deploy / rule change)."""
+    n = 0
+    d = a
+    while d <= b:
+        compute_day(d); n += 1
+        d += timedelta(days=1)
+    return n
+
+
 def compute_day(d: date) -> int:
     """Compute + persist attendance_day for all active employees on date d."""
     rules = get_rules()

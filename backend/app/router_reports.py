@@ -53,8 +53,7 @@ def _hm(m):
 @router.get("/daily.xlsx")
 def daily_xlsx(date: str, user: dict = Depends(auth.get_current_user)):
     d = datetime.strptime(date, "%Y-%m-%d").date()
-    if db.query("SELECT count(*) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"] == 0:
-        eng.compute_day(d)
+    eng.recompute_if_stale(d)
     scope, p = _scope(user)
     rows = db.query(
         f"""SELECT ad.emp_code, {db.FULLNAME} AS name, dep.name AS department, ad.status,
@@ -99,8 +98,7 @@ def _monthly_rows(user: dict, month=None, date_from=None, date_to=None, include_
     end = min(last, dubai_today())
     d = first
     while d <= end:
-        if db.query("SELECT count(*) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"] == 0:
-            eng.compute_day(d)
+        eng.recompute_if_stale(d)
         d += timedelta(days=1)
     scope, p = _scope(user)
     # Skip employees with no attendance in the range (long-time absent) unless asked.
@@ -156,8 +154,7 @@ def _detail_employees(user, month, date_from, date_to, search, include_absent):
     end = min(last, dubai_today())
     d = first
     while d <= end:
-        if db.query("SELECT count(*) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"] == 0:
-            eng.compute_day(d)
+        eng.recompute_if_stale(d)
         d += timedelta(days=1)
 
     scope_frag, sparams = _scope(user)

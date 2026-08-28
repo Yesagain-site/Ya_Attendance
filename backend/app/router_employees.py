@@ -66,8 +66,12 @@ def list_employees(user: dict = Depends(auth.get_current_user),
     scope_sql, params = _scope_clause(user)
     where = ["1=1"]
     if search:
-        where.append("(e.pin ILIKE %s OR e.name ILIKE %s)")
-        params += [f"%{search}%", f"%{search}%"]
+        where.append(
+            "(e.pin ILIKE %s OR e.name ILIKE %s OR e.first_name ILIKE %s "
+            "OR e.last_name ILIKE %s "
+            "OR TRIM(COALESCE(e.first_name,'')||' '||COALESCE(e.last_name,'')) ILIKE %s)")
+        s = f"%{search}%"
+        params += [s, s, s, s, s]
     if department_id is not None:
         where.append("e.department_id = %s")
         params.append(department_id)
@@ -91,6 +95,9 @@ def inactive(months: int = 3, user: dict = Depends(auth.get_current_user)):
     """Active employees with no attendance in the last `months` months."""
     months = max(1, min(months, 24))
     scope_sql, params = _scope_clause(user)
+    # "Inactive" = punched before but not in the last N months, OR an old record
+    # that never punched. A freshly-added employee (no punches yet, created
+    # recently) is NOT inactive — it just hasn't been used yet.
     rows = db.query(
         f"""SELECT e.pin, {db.FULLNAME} AS name, e.department_id, dep.name AS department,
                    (e.photo IS NOT NULL AND e.photo<>'') AS has_photo,
@@ -99,11 +106,14 @@ def inactive(months: int = 3, user: dict = Depends(auth.get_current_user)):
             LEFT JOIN attendance a ON a.pin = e.pin
             LEFT JOIN department dep ON dep.id = e.department_id
             WHERE e.active {scope_sql}
-            GROUP BY e.pin, e.first_name, e.last_name, e.name, e.department_id, dep.name, e.photo
-            HAVING MAX(a.punch_time) IS NULL
-                OR MAX(a.punch_time) < (now() - (%s || ' months')::interval)
+            GROUP BY e.pin, e.first_name, e.last_name, e.name, e.department_id,
+                     dep.name, e.photo, e.created_at
+            HAVING (MAX(a.punch_time) IS NOT NULL
+                    AND MAX(a.punch_time) < (now() - (%s || ' months')::interval))
+                OR (MAX(a.punch_time) IS NULL
+                    AND e.created_at < (now() - (%s || ' months')::interval))
             ORDER BY MAX(a.punch_time) NULLS FIRST""",
-        tuple(params + [months]))
+        tuple(params + [months, months]))
     return rows
 
 
@@ -197,8 +207,12 @@ def export_xlsx(user: dict = Depends(auth.get_current_user),
     scope_sql, params = _scope_clause(user)
     where = ["1=1"]
     if search:
-        where.append("(e.pin ILIKE %s OR e.name ILIKE %s)")
-        params += [f"%{search}%", f"%{search}%"]
+        where.append(
+            "(e.pin ILIKE %s OR e.name ILIKE %s OR e.first_name ILIKE %s "
+            "OR e.last_name ILIKE %s "
+            "OR TRIM(COALESCE(e.first_name,'')||' '||COALESCE(e.last_name,'')) ILIKE %s)")
+        s = f"%{search}%"
+        params += [s, s, s, s, s]
     if department_id is not None:
         where.append("e.department_id = %s"); params.append(department_id)
     rows = db.query(f"{SELECT} WHERE {' AND '.join(where)} {scope_sql} ORDER BY e.pin", tuple(params))

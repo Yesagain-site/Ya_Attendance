@@ -123,6 +123,8 @@ export const api = {
   createSchedule: (b) => req("/attendance/schedules", { method: "POST", body: b }),
   deleteSchedule: (id) => req("/attendance/schedules/" + id, { method: "DELETE" }),
   computeDay: (date) => req("/attendance/compute", { method: "POST", params: { date } }),
+  recomputeRange: (from, to) =>
+    req("/attendance/recompute-range", { method: "POST", params: { from, to } }),
   dailyGrid: (date) => req("/attendance/daily", { params: { date } }),
 
   // dashboard + reports

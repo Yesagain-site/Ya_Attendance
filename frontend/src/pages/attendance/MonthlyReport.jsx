@@ -2,9 +2,10 @@ import React, { useEffect, useState, useCallback } from "react";
 import {
   Card, DatePicker, Button, Space, Segmented, Input, Collapse, Table, Tag, Empty, message,
 } from "antd";
-import { DownloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { DownloadOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../../api.js";
+import { useAuth } from "../../auth.jsx";
 
 const hm = (m) => `${Math.floor((m || 0) / 60)}h ${(m || 0) % 60}m`;
 const t = (v) => (v ? String(v).slice(11, 19) : "—");
@@ -26,6 +27,7 @@ const dayColumns = [
 ];
 
 export default function MonthlyReport() {
+  const { isAdmin } = useAuth();
   const [mode, setMode] = useState("Month");
   const [month, setMonth] = useState(dayjs());
   const [range, setRange] = useState([dayjs().startOf("month"), dayjs()]);
@@ -53,6 +55,26 @@ export default function MonthlyReport() {
     finally { setLoading(false); }
   }, [mode, month, range, search]);
   useEffect(() => { load(); }, [load]);
+
+  const rangeDates = () => {
+    if (mode === "Month") {
+      const from = month.startOf("month");
+      const end = month.endOf("month");
+      const to = end.isAfter(dayjs()) ? dayjs() : end;
+      return [from.format("YYYY-MM-DD"), to.format("YYYY-MM-DD")];
+    }
+    return [range[0].format("YYYY-MM-DD"), range[1].format("YYYY-MM-DD")];
+  };
+  const recompute = async () => {
+    setLoading(true);
+    try {
+      const [from, to] = rangeDates();
+      const r = await api.recomputeRange(from, to);
+      message.success(`Recomputed ${r.days} days`);
+      await load();
+    } catch (e) { message.error(e.message); }
+    finally { setLoading(false); }
+  };
 
   const items = emps.map((e) => {
     const s = e.summary;
@@ -87,6 +109,11 @@ export default function MonthlyReport() {
         <Button type="primary" icon={<DownloadOutlined />} onClick={() =>
           api.downloadDetail(params(), `attendance_${label()}.xlsx`).catch((e) => message.error(e.message))}>
           Export Excel</Button>
+        {isAdmin && (
+          <Button icon={<ReloadOutlined />} onClick={recompute}
+            title="Refresh calculations for this period (use after a deploy or rule change)">
+            Recompute</Button>
+        )}
       </Space>}>
       <p style={{ color: "#999", marginTop: 0 }}>
         {period.from} → {period.to} · {emps.length} employees · long-absent staff excluded ·

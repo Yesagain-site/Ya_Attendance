@@ -184,19 +184,24 @@ def compute(date: str, user: dict = Depends(auth.require_admin)):
     return {"ok": True, "date": date, "employees": n}
 
 
+@router.post("/recompute-range")
+def recompute_range(date_from: str = Query(..., alias="from"),
+                    date_to: str = Query(..., alias="to"),
+                    user: dict = Depends(auth.require_admin)):
+    """Force-recompute every day in the range (use after a deploy / rule change)."""
+    a = datetime.strptime(date_from, "%Y-%m-%d").date()
+    b = datetime.strptime(date_to, "%Y-%m-%d").date()
+    if (b - a).days > 92:
+        raise HTTPException(400, "Range too large (max ~3 months)")
+    n = eng.compute_range(a, b)
+    return {"ok": True, "from": date_from, "to": date_to, "days": n}
+
+
 @router.get("/daily")
 def daily_grid(date: str, user: dict = Depends(auth.get_current_user)):
     """Computed daily attendance for a date (auto-computes if missing)."""
     d = datetime.strptime(date, "%Y-%m-%d").date()
-    have = db.query("SELECT count(*) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"]
-    if have == 0:
-        eng.compute_day(d)
-    else:
-        # Refresh if punches arrived since the last compute for this day.
-        last = db.query("SELECT max(computed_at) AS c FROM attendance_day WHERE work_date=%s", (d,))[0]["c"]
-        newest = db.query("SELECT max(created_at) AS c FROM attendance WHERE punch_time::date=%s", (d,))[0]["c"]
-        if last is not None and newest is not None and newest > last:
-            eng.compute_day(d)
+    eng.recompute_if_stale(d)
     ids = auth.scope_dept_ids(user)
     scope = ""
     params = [d]
